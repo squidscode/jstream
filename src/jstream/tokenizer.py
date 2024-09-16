@@ -24,7 +24,7 @@ Digit9 = "[123456789]"
 Digit = "[0123456789]"
 rnumber = f"-?(0|{Digit9}{Digit}*)(\\.{Digit}+)?([Ee][+-]?{Digit}+)?"
 rstring = f"\"({Unescaped}|\\\\([\"\\/bfnrt]|u{Hex}{Hex}{Hex}{Hex}))*\""
-rjson_separators = "[][{}:,]"
+rjson_separators = r"[\]\[{}:\,]"
 rtrue = "true"
 rfalse = "false"
 rnull = "null"
@@ -37,12 +37,11 @@ class Separator:
 class JsonLexer:
     def __init__(self):
         self.last_match = None       
-        identity = lambda x : x
         self.s = []
         self.transformers = {
             rjson_separators: lambda sep: Separator(sep),
             rnumber: lambda x : (float(x) if "." in x or "e" in x or "E" in x else int(x)),
-            rstring: identity,
+            rstring: lambda x : x[1:-1],
             rtrue: lambda x : bool(x),
             rfalse: lambda x : bool(x), 
             rnull: lambda _ : None,
@@ -74,23 +73,19 @@ class JsonLexer:
 
     def process(self):
         st = "".join(self.s)
-        # print(f"process({st})")
         if (m := self.whitespace.match(st)) and m != None:
             self.s = self.s[m.span()[1]:]
             st = st[m.span()[1]:]
 
         for rs, r in self.regs.items():
             if (cur_match := r.match(st)) and cur_match != None:
-                # print(f"{cur_match=}, {self.last_match=}")
                 if self.last_match != None and cur_match.span() == self.last_match.span() \
                     and cur_match.span()[1] < len(st) - self.lag:
                     _, idx = cur_match.span()
                     captured = st[:idx]
                     self.s = self.s[idx:]
                     self.last_match = None
-                    # print("Found:", cur_match)
                     yield self.transformers[rs](captured)
-                # print(f"Resetting last_match: {cur_match}")
                 self.last_match = cur_match
                 return
         self.last_match = None

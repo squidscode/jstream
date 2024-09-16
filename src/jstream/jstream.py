@@ -28,4 +28,9 @@ def loads(gen: Generator):
     parser = JsonParser()
     for obj, _ in parser.parse_generator(lex_gen()):
         yield obj
+        parser = JsonParser() # reset the parser.
 
+def toks(gen: Generator):
+    lexer = JsonLexer()
+    yield from lexer.generator(gen)
+    yield from lexer.flush()

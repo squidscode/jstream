@@ -39,6 +39,8 @@ class TokenParser:
     def parse_step(self, tok):
         if not self.done and self.predicate(tok):
             yield tok, 1
+        if self.done:
+            yield None, None
         self.done = True
 
 def is_separator(target):
@@ -65,51 +67,46 @@ class ParserCombinator:
             yield a
 
     def parse_step(self, tok):
-        self.ast.append(tok)
-        has_reduced = False
-        tot = 0
         for parser in self.parser_instances:
-            # print(f"Checking {type(parser)=}")
             for ast_node, toks_consumed in parser.parse_step(tok):
-                # print(f"Consumed {ast_node=}, {toks_consumed=}")
-                self.ast = [ast_node] + self.ast[toks_consumed:]
-                has_reduced = True
-                tot += toks_consumed
-        if has_reduced:
-            yield self.ast[0], tot
-        # print(f"New {self.ast=}")
+                if toks_consumed == None:
+                    continue
+                yield ast_node, toks_consumed
 
 class Rule:
-    def __init__(self, formatter, *pgen):
-        def parsers_gen():
-            i = 0
-            while i < len(pgen):
-                yield pgen[i](*pgen[i+1])
-                i += 2
-        parsers = parsers_gen()
-        self.sentinel = object()
-        self.cur_parser = next(parsers, None)
-        self.parsed_output = []
-        self.total = 0
+    def __init__(self, formatter, *parser_pairs):
+        assert(len(parser_pairs) % 2 == 0 and len(parser_pairs) > 0)
+        self.parser_pairs = parser_pairs
+        self.active_parsers = [(0, self.get_parser(0), [])]
+        self.n = len(parser_pairs) // 2
         self.formatter = formatter
-        self.parsers = parsers
+        self.tot = 0
+
+    def get_parser(self, ind):
+        return self.parser_pairs[2*ind](*self.parser_pairs[2*ind+1])
 
     def parse_step(self, node):
-        # print(f"[{type(self).__name__}] parsing node: {node}")
-        if self.cur_parser == None:
-            return
-        nxt_out = next(self.cur_parser.parse_step(node), self.sentinel)
-        if nxt_out is self.sentinel:
-            return
-        # print(f"{nxt_out=}")
-        pout, pntoks = nxt_out
-        self.total += pntoks
-        self.parsed_output.append(pout)
-        # print(f"[{type(self).__name__}] Prev {self.cur_parser=}")
-        self.cur_parser = next(self.parsers, None)
-        # print(f"[{type(self).__name__}] New {self.cur_parser=}")
-        if self.cur_parser == None:
-            yield self.formatter(*self.parsed_output), self.total
+        nparsers = len(self.active_parsers)
+        self.tot += 1
+        indx_marked_for_deletion = []
+        for i in range(nparsers):
+            cn, p, ra = self.active_parsers[i]
+            for r, toks in p.parse_step(node):
+                if toks == None: # parser has finished
+                    indx_marked_for_deletion.append(i)
+                    continue
+                if cn+1 == self.n:
+                    b = ra + [r]
+                    yield self.formatter(*b), self.tot
+                    continue
+                self.active_parsers.append((
+                    cn+1,
+                    self.get_parser(cn+1),
+                    ra + [r],
+                ))
+        for i in reversed(indx_marked_for_deletion):
+            del self.active_parsers[i]
+
 
 class JsonParser(ParserCombinator):
     def __init__(self):
@@ -190,16 +187,25 @@ class ArrayParserR2(Rule):
             TokenParser, [is_separator("]")],
         )
 
-# <Elements> ::= <Value>
 class ElementsParser(ParserCombinator):
     def __init__(self):
-        super().__init__(ValueParser, ElementsParserR2)
+        super().__init__(ElementsParserR1, ElementsParserR2)
 
+# <Elements> ::= <Value>
+class ElementsParserR1(Rule):
+    def __init__(self):
+        def formatter(v):
+            return [v]
+        super().__init__(
+            formatter,
+            ValueParser, [],
+        )
 # <Elements> ::= <Value> ',' <Elements>
 class ElementsParserR2(Rule):
     def __init__(self):
         def formatter(v, _, elms):
-            return [v] + elms
+            elms = [v] + elms
+            return elms
         super().__init__(
             formatter,
             ValueParser, [],

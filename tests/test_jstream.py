@@ -18,6 +18,14 @@ class IntegrationTest(unittest.TestCase):
         self.assertEqual(list(jstream.loads(f("0.123456789e9"))), [0.123456789e9])
         self.assertEqual(list(jstream.loads(f("{}"))), [{}])
         
+        self.assertEqual(list(jstream.loads(f('{"hi": "bye"}'))), [{"hi": "bye"}])
+        self.assertEqual(list(jstream.loads(f('{"hi": 10}'))), [{"hi": 10}])
+        self.assertEqual(list(jstream.loads(f('{"hi": [10,12]}'))), [{"hi": [10,12]}])
+        self.assertEqual(list(jstream.loads(f(
+            '{"command": "hello", "client id": 1203000400, "data": [10, 34, 24]}'
+        ))), [
+            {"command": "hello", "client id": 1203000400, "data": [10,34, 24]},
+        ])
 
 
 class ParserTests(unittest.TestCase):
@@ -70,32 +78,94 @@ class ParserTests(unittest.TestCase):
         pass
 
     def test_array_parser(self):
-        p = parser.ArrayParserR1()
+        p = parser.ArrayParser()
         a = []
         a.extend(p.parse_step(tokenizer.Separator("[")))
         a.extend(p.parse_step(tokenizer.Separator("]")))
         self.assertEqual(a, [([], 2)])
         a.extend(p.parse_step(tokenizer.Separator("[")))
+        a.extend(p.parse_step(19))
         a.extend(p.parse_step(tokenizer.Separator("]")))
         self.assertEqual(a, [([], 2)])
 
-        p = parser.ArrayParserR1()
+        p = parser.ArrayParser()
         a = []
         a.extend(p.parse_step(tokenizer.Separator("[")))
+        a.extend(p.parse_step(10))
+        a.extend(p.parse_step(tokenizer.Separator("]")))
+        self.assertEqual(a, [([10], 3)])
+
+        p = parser.ArrayParser()
+        a = []
         a.extend(p.parse_step(tokenizer.Separator("[")))
-        self.assertEqual(a, [])
+        a.extend(p.parse_step(10))
+        a.extend(p.parse_step(tokenizer.Separator(",")))
+        a.extend(p.parse_step(10))
+        a.extend(p.parse_step(tokenizer.Separator("]")))
+        self.assertEqual(a, [([10, 10], 5)])
 
     def test_array_parser1(self):
-        pass
+        p = parser.ArrayParserR1()
+        a = []
+        a.extend(p.parse_step(tokenizer.Separator("[")))
+        a.extend(p.parse_step(tokenizer.Separator("]")))
+        self.assertEqual(a, [([], 2)])
 
     def test_array_parser2(self):
-        pass
+        p = parser.ArrayParserR2()
+        a = []
+        a.extend(p.parse_step(tokenizer.Separator("[")))
+        a.extend(p.parse_step(tokenizer.Separator("]")))
+        self.assertEqual(a, [])
+
+        p = parser.ArrayParserR2()
+        a = []
+        a.extend(p.parse_step(tokenizer.Separator("[")))
+        a.extend(p.parse_step(10))
+        a.extend(p.parse_step(tokenizer.Separator("]")))
+        self.assertEqual(a, [([10], 3)])
+
+        p = parser.ArrayParserR2()
+        a = []
+        a.extend(p.parse_step(tokenizer.Separator("[")))
+        a.extend(p.parse_step(10))
+        a.extend(p.parse_step(tokenizer.Separator(",")))
+        a.extend(p.parse_step(10))
+        a.extend(p.parse_step(tokenizer.Separator("]")))
+        self.assertEqual(a, [([10,10], 5)])
 
     def test_elements_parser(self):
         pass
 
+    def test_elements_parser_r1(self):
+        def parse(val):
+            p = parser.ElementsParserR1()
+            return list(p.parse_step(val))
+        g = parse({})
+        self.assertEqual(g, [([{}], 1)])
+        g = parse([])
+        self.assertEqual(g, [([[]], 1)])
+        g = parse(1)
+        self.assertEqual(g, [([1], 1)])
+        g = parse("string")
+        self.assertEqual(g, [(["string"], 1)])
+
     def test_elements_parser2(self):
-        pass
+        comma = tokenizer.Separator(",")
+        def parse(*vals):
+            p = parser.ElementsParserR2()
+            a = []
+            for v in vals:
+                a.extend(p.parse_step(v))
+            return a
+        g = parse({}, comma, 1)
+        self.assertEqual(g, [([{}, 1], 3)])
+        g = parse([], comma, 2)
+        self.assertEqual(g, [([[], 2], 3)])
+        g = parse(1, comma, 10)
+        self.assertEqual(g, [([1, 10], 3)])
+        g = parse("string", comma, "s", comma, "r")
+        self.assertEqual(g, [(["string", "s"], 3), (["string", "s", "r"], 5)])
 
     def test_value_parser(self):
         pass
